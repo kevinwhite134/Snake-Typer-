@@ -29,7 +29,7 @@ npm test
 npm run preview
 ```
 
-The production build is written to `dist/`. Serve that directory with a static HTTP server.
+After building, double-click `dist/index.html` to play directly from your computer. You can also serve `dist/` with a static HTTP server.
 
 ## Architecture
 
