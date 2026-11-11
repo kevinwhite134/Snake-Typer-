@@ -1,4 +1,4 @@
-import { STAGES } from './game/config.ts';
+import { HZ, MISTAKE_POINTS, STAGES } from './game/config.ts';
 import type { Run, RunResult } from './game/run.ts';
 import type { Save, Settings } from './storage.ts';
 
@@ -58,6 +58,11 @@ export function setupUi(root: HTMLElement): void {
               <button class="icon-btn pause-btn" data-action="pause" aria-label="Pause">${icon('pause')}</button>
             </div>
           </div>
+          <div id="typing-card" class="typing-card" aria-hidden="true" hidden>
+            <div class="typing-meta"><span id="typing-status"></span><span id="typing-count"></span></div>
+            <div id="typing-letters" class="typing-letters"></div>
+            <div class="typing-timer"><div id="typing-time"></div></div>
+          </div>
           <div id="stage-hint" class="stage-hint" hidden></div>
           <div id="announcement" class="toast" role="status" hidden></div>
           <div id="overlay" class="overlay"></div>
@@ -99,10 +104,10 @@ export function instructions(done: boolean): string {
        <button class="primary" data-action="play">${icon('play')} Start a run</button></section>`
     : `<section class="panel instructions">${back()}<p class="eyebrow">TRAINING / 01</p><h2>How to play</h2>
        <div class="steps">
-         <div><b>01</b><strong>Type</strong><p>Use your keyboard to type the highlighted word.</p></div>
+         <div><b>01</b><strong>Type</strong><p>The boxed letter is your next key. Typed letters turn mint.</p></div>
          <div><b>02</b><strong>Complete</strong><p>Finish it before the timer bar empties.</p></div>
-         <div><b>03</b><strong>Jump</strong><p>Your cube jumps automatically at the right moment.</p></div>
-         <div><b>04</b><strong>Survive</strong><p>Keep typing as the course gets faster.</p></div>
+         <div><b>03</b><strong>Jump</strong><p>The cube jumps automatically and unlocks the next word at takeoff.</p></div>
+         <div><b>04</b><strong>Stay accurate</strong><p>A typo sends you back one letter, costs ${MISTAKE_POINTS} points, and breaks your combo.</p></div>
        </div>
        <button class="primary" data-action="practice">${icon('keyboard')} Practice three jumps</button></section>`;
 }
@@ -193,14 +198,55 @@ export function updateHud(run: Run): void {
   put('hud-combo', `${run.combo}×`);
   put('hud-wpm', run.liveWpm.toString());
   put('hud-accuracy', pct(run.accuracy));
-  put('stage-name', `0${run.stage + 1} / ${STAGES[run.stage].name.toUpperCase()}`);
+  const course = STAGES[run.stage];
+  put('stage-name', course.course.toUpperCase());
+  element('stage-display').style.setProperty('--course-color', course.color);
   const bars = element('stage-bars').children;
   for (let i = 0; i < bars.length; i += 1) bars[i].classList.toggle('reached', i <= run.stage);
-  const active = run.active;
-  put('current-word', active ? `Current word: ${active.word}. ${active.typed} letters typed.` : '');
-  element('current-word').dataset.word = active?.word ?? '';
-  element('current-word').dataset.typed = String(active?.typed ?? 0);
+  updateTyping(run);
   if (run.tutorial) put('stage-hint', run.held ? 'Type the highlighted word to continue' : `PRACTICE · ${run.cleared} / 3 CLEARED`);
+}
+
+function updateTyping(run: Run): void {
+  const active = run.active;
+  const queued = run.queued;
+  const word = active ?? queued;
+  const card = element('typing-card');
+  card.hidden = !word;
+  const current = element('current-word');
+  current.dataset.word = active?.word ?? '';
+  current.dataset.typed = String(active?.typed ?? 0);
+  put('current-word', active
+    ? `${active.word}. ${active.typed} of ${active.word.length} letters typed. Next letter ${active.word[active.typed]}.`
+    : queued ? 'Jump ready. The next word opens at takeoff.' : '');
+  if (!word) return;
+
+  const letters = element('typing-letters');
+  if (letters.dataset.word !== word.word) {
+    letters.dataset.word = word.word;
+    letters.replaceChildren(...Array.from(word.word, (letter) => {
+      const cell = document.createElement('span');
+      cell.textContent = letter;
+      return cell;
+    }));
+  }
+  for (let i = 0; i < letters.children.length; i += 1) {
+    letters.children[i].classList.toggle('is-typed', i < word.typed);
+    letters.children[i].classList.toggle('is-next', i === word.typed);
+  }
+
+  const time = active
+    ? Math.max(0, (active.latest - run.tick) / Math.max(1, active.latest - (active.opened ?? 0)))
+    : 1;
+  const late = active && !run.tutorial && run.tick > active.latest;
+  const penalty = active && run.tick - active.mistakeTick < 0.8 * HZ;
+  card.dataset.state = queued ? 'ready' : penalty || time < 0.2 ? 'danger' : 'active';
+  put('typing-status', queued ? 'Jump ready · Next word at takeoff'
+    : late ? 'Deadline missed'
+    : penalty ? `Mistake · −${MISTAKE_POINTS} points`
+    : run.held ? 'Type to continue' : 'Type this word');
+  put('typing-count', queued ? '✓' : `${word.typed} / ${word.word.length}`);
+  element('typing-time').style.transform = `scaleX(${time})`;
 }
 
 export function updateSettingsUi(save: Save): void {

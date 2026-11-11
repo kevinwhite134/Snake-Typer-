@@ -11,20 +11,25 @@ export function jumpHeight(ageTicks: number): number {
 }
 
 export function hitsObstacle(obstacle: ObstacleGeometry, from: number, to: number, bottom: number): boolean {
-  const { width, height, spikes } = SHAPES[obstacle.shape];
-  const left = Math.max(0, from - HIT_HALF - obstacle.x);
-  const right = Math.min(width, to + HIT_HALF - obstacle.x);
-  if (right <= left || bottom >= height) return false;
-  if (spikes === 0) return true;
+  const front = to + HIT_HALF - obstacle.x;
+  const back = from - HIT_HALF - obstacle.x;
+  const shape = SHAPES[obstacle.shape];
+  if (front <= 0 || back >= shape.width || bottom >= shape.height) return false;
 
-  // Sweep the cube's footprint over this tick. For each triangle, the point
-  // nearest its apex is the highest part that the footprint can touch.
-  const span = width / spikes;
-  for (let i = 0; i < spikes; i += 1) {
-    const apex = (i + 0.5) * span;
-    const peakX = Math.max(left, Math.min(apex, right));
-    const peak = height * (1 - Math.abs(peakX - apex) / (span / 2));
-    if (peak > bottom) return true;
+  for (const { x, width, height, spikes } of shape.parts) {
+    const left = Math.max(0, back - x);
+    const right = Math.min(width, front - x);
+    if (right <= left || bottom >= height) continue;
+    if (spikes === 0) return true;
+
+    // The point nearest each apex is the highest part the cube can touch.
+    const span = width / spikes;
+    for (let i = 0; i < spikes; i += 1) {
+      const apex = (i + 0.5) * span;
+      const peakX = Math.max(left, Math.min(apex, right));
+      const peak = height * (1 - Math.abs(peakX - apex) / (span / 2));
+      if (peak > bottom) return true;
+    }
   }
   return false;
 }

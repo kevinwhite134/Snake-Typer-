@@ -122,10 +122,10 @@ button svg, .keyboard-notice svg { width: 18px; height: 18px; flex: none; }
 .signal > span.hot { background: #ff82ad; box-shadow: 0 0 11px #ff82ad8c; }
 .shortcuts { text-transform: uppercase; }
 .shortcuts kbd { margin-left: 3px; }
-.stage-display { color: var(--mint); }
+.stage-display { color: var(--course-color, var(--mint)); }
 .stage-bars { gap: 3px; }
 .stage-bars i { display: block; width: 12px; height: 4px; border-radius: 2px; background: #382d50; }
-.stage-bars .reached { background: var(--mint); box-shadow: 0 0 7px #69ffdd61; }
+.stage-bars .reached { background: var(--course-color, var(--mint)); box-shadow: 0 0 7px currentColor; }
 .cabinet-foot { min-height: 37px; padding-inline: 2px; color: var(--subtle); font-size: 9px; }
 .keyboard-notice {
   display: none;
@@ -318,6 +318,56 @@ dialog p:not(.eyebrow) { color: var(--muted); font-size: 13px; }
 .hud-right span { display: inline; }
 .hud-right > div > div { margin-bottom: 4px; }
 .pause-btn { width: clamp(28px, 4cqw, 38px); height: clamp(28px, 4cqw, 38px); }
+.typing-card {
+  --typing-accent: var(--mint);
+  position: absolute;
+  top: 22%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: max-content;
+  min-width: min(290px, 68%);
+  padding: clamp(6px, 1.15cqw, 14px);
+  border: 1px solid var(--typing-accent);
+  border-radius: clamp(6px, 0.8cqw, 11px);
+  background: #0b1020f5;
+  box-shadow: 0 8px 24px #07081299;
+  pointer-events: none;
+}
+.typing-card[data-state="danger"] { --typing-accent: #ff9abb; }
+.typing-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  color: var(--typing-accent);
+  font: 700 clamp(8px, 1.18cqw, 14px)/1.2 var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.typing-letters {
+  display: flex;
+  justify-content: center;
+  gap: clamp(2px, 0.32cqw, 4px);
+  margin-block: clamp(4px, 0.8cqw, 10px);
+  font: 700 clamp(15px, 3.6cqw, 42px)/1.16 var(--mono);
+}
+.typing-letters span {
+  width: 0.89em;
+  padding-block: 0.04em;
+  border: 1px solid transparent;
+  border-radius: 0.12em;
+  color: #d9d2e9;
+  text-align: center;
+}
+.typing-letters .is-typed { color: var(--mint); background: #69ffdd19; }
+.typing-letters .is-next {
+  color: #101526;
+  background: var(--typing-accent);
+  border-color: #fff;
+  box-shadow: 0 2px 0 #fff;
+}
+.typing-timer { height: clamp(2px, 0.43cqw, 5px); background: #423b58; border-radius: 99px; overflow: hidden; }
+.typing-timer div { height: 100%; background: var(--typing-accent); transform-origin: left; }
 .stage-hint, .toast {
   position: absolute;
   left: 50%;
@@ -333,7 +383,7 @@ dialog p:not(.eyebrow) { color: var(--muted); font-size: 13px; }
   pointer-events: none;
 }
 .stage-hint { bottom: 5%; }
-.toast { top: 17%; padding: 10px 16px; box-shadow: 0 0 24px #69ffdd30; }
+.toast { bottom: 5%; padding: 10px 16px; box-shadow: 0 0 24px #69ffdd30; }
 .countdown { text-align: center; }
 .countdown strong {
   display: block;
@@ -367,6 +417,7 @@ dialog p:not(.eyebrow) { color: var(--muted); font-size: 13px; }
   .hud-right { gap: 5px; }
   .shortcuts { gap: 4px; }
   .stage-bars { display: none; }
+  .typing-card { top: 24%; }
   .keyboard-notice { display: flex; }
 }
 @media (pointer: coarse) { .keyboard-notice { display: flex; } }

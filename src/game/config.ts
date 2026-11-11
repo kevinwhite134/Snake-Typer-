@@ -10,23 +10,63 @@ export const GRAVITY = 1800;
 export const JUMP_VELOCITY = 790;
 export const AIR_TICKS = Math.ceil((2 * JUMP_VELOCITY / GRAVITY) * HZ);
 export const LANDING_BUFFER = Math.ceil(0.16 * HZ);
-export const COLORS = ['#69ffdd', '#79c7ff', '#a39aff', '#ff82de', '#ffb27f'];
+export const MISTAKE_POINTS = 25;
+
+type ShapePart = { width: number; height: number; spikes: number };
+
+function formation(...parts: ShapePart[]) {
+  let width = 0;
+  const positioned = parts.map((part) => {
+    const x = width;
+    width += part.width;
+    return { ...part, x };
+  });
+  return { width, height: Math.max(...parts.map((part) => part.height)), parts: positioned };
+}
 
 export const SHAPES = {
-  single: { width: 44, height: 48, spikes: 1, unlock: 0 },
-  double: { width: 85, height: 55, spikes: 2, unlock: 1 },
-  triple: { width: 126, height: 64, spikes: 3, unlock: 2 },
-  block: { width: 73, height: 90, spikes: 0, unlock: 3 },
-  cluster: { width: 168, height: 72, spikes: 4, unlock: 3 },
+  single: formation({ width: 44, height: 48, spikes: 1 }),
+  double: formation({ width: 85, height: 55, spikes: 2 }),
+  triple: formation({ width: 126, height: 64, spikes: 3 }),
+  block: formation({ width: 73, height: 90, spikes: 0 }),
+  cluster: formation({ width: 168, height: 72, spikes: 4 }),
+  steps: formation(
+    { width: 35, height: 42, spikes: 0 },
+    { width: 42, height: 77, spikes: 0 },
+    { width: 35, height: 42, spikes: 0 },
+  ),
+  fortress: formation(
+    { width: 52, height: 52, spikes: 1 },
+    { width: 64, height: 110, spikes: 0 },
+    { width: 52, height: 52, spikes: 1 },
+  ),
 };
 
 export const STAGES = [
-  { name: 'Beginner', from: 0, speed: 300, min: 3, max: 4, wpm: 43, reaction: 0.48 },
-  { name: 'Easy', from: 20, speed: 375, min: 4, max: 5, wpm: 54, reaction: 0.38 },
-  { name: 'Medium', from: 45, speed: 465, min: 5, max: 7, wpm: 69, reaction: 0.31 },
-  { name: 'Hard', from: 75, speed: 570, min: 6, max: 9, wpm: 84, reaction: 0.25 },
-  { name: 'Insane', from: 120, speed: 680, min: 8, max: 14, wpm: 104, reaction: 0.20 },
-];
+  {
+    name: 'Beginner', course: 'Neon Circuit', color: '#69ffdd', from: 0, speed: 300, min: 3, max: 4, wpm: 43, reaction: 0.48,
+    pattern: ['single', 'double', 'single', 'double', 'double'],
+  },
+  {
+    name: 'Easy', course: 'Voltage Vault', color: '#79c7ff', from: 20, speed: 375, min: 4, max: 5, wpm: 54, reaction: 0.38,
+    pattern: ['double', 'steps', 'double', 'single', 'steps'],
+  },
+  {
+    name: 'Medium', course: 'Prism Works', color: '#ba9bff', from: 45, speed: 465, min: 5, max: 7, wpm: 69, reaction: 0.31,
+    pattern: ['steps', 'triple', 'block', 'double', 'triple'],
+  },
+  {
+    name: 'Hard', course: 'Pulse Foundry', color: '#ff82de', from: 75, speed: 570, min: 6, max: 9, wpm: 84, reaction: 0.25,
+    pattern: ['cluster', 'block', 'fortress', 'steps', 'triple'],
+  },
+  {
+    name: 'Insane', course: 'Solar Core', color: '#ffba7f', from: 120, speed: 680, min: 8, max: 14, wpm: 104, reaction: 0.20,
+    pattern: ['fortress', 'cluster', 'steps', 'fortress', 'triple', 'block'],
+  },
+] as const satisfies ReadonlyArray<{
+  name: string; course: string; color: string; from: number; speed: number;
+  min: number; max: number; wpm: number; reaction: number; pattern: ReadonlyArray<keyof typeof SHAPES>;
+}>;
 
 export const TUTORIAL_WORDS = ['tap', 'jump', 'dash'];
 export const TUTORIAL_SPEED = 245;

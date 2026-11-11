@@ -1,6 +1,6 @@
 import {
   AIR_TICKS, DISTANCE_PER_METER, DISTANCE_PER_POINT, FIRST_TAKEOFF, HIT_HALF, HZ,
-  LANDING_BUFFER, PLAYER_X, SHAPES, STAGES, STEP, TUTORIAL_WORDS, WIDTH, distanceAt, stageIndex,
+  LANDING_BUFFER, MISTAKE_POINTS, PLAYER_X, SHAPES, STAGES, STEP, TUTORIAL_WORDS, WIDTH, distanceAt, stageIndex,
 } from './config.ts';
 import { hitsObstacle, jumpHeight, planJump } from './physics.ts';
 import type { JumpWindow, ObstacleGeometry, Shape } from './physics.ts';
@@ -11,9 +11,8 @@ export type Obstacle = ObstacleGeometry & JumpWindow & {
   typed: number;
   mistakes: number;
   opened: number | null;
-  status: 'open' | 'queued' | 'jumping' | 'cleared' | 'failed';
-  feedback: number;
-  flash: 'correct' | 'error' | 'complete';
+  status: 'waiting' | 'open' | 'queued' | 'jumping' | 'cleared' | 'failed';
+  mistakeTick: number;
   multiplier: number;
 };
 
@@ -39,8 +38,6 @@ export function comboMultiplier(combo: number): number {
   if (combo >= 5) return 1.25;
   return 1;
 }
-
-const shapeKeys = Object.keys(SHAPES) as Shape[];
 
 export class Run {
   tick = 0;
@@ -75,14 +72,19 @@ export class Run {
     this.emit = emit;
     this.random = random;
     this.stockObstacles();
+    this.activateNext();
   }
 
   get active(): Obstacle | undefined {
     return this.obstacles.find((obstacle) => obstacle.status === 'open');
   }
 
+  get queued(): Obstacle | undefined {
+    return this.obstacles.find((obstacle) => obstacle.status === 'queued');
+  }
+
   get score(): number {
-    return this.points + Math.floor(this.distance / DISTANCE_PER_POINT);
+    return Math.max(0, this.points + Math.floor(this.distance / DISTANCE_PER_POINT) - this.incorrect * MISTAKE_POINTS);
   }
 
   get accuracy(): number {
@@ -112,12 +114,12 @@ export class Run {
   type(key: string): void {
     const obstacle = this.active;
     if (this.dead || this.finished || !obstacle || this.tick > obstacle.latest) return;
-    obstacle.feedback = this.tick;
 
     if (key !== obstacle.word[obstacle.typed]) {
       this.incorrect += 1;
       obstacle.mistakes += 1;
-      obstacle.flash = 'error';
+      obstacle.mistakeTick = this.tick;
+      obstacle.typed = Math.max(0, obstacle.typed - 1);
       this.combo = 0;
       this.emit('error', obstacle);
       return;
@@ -126,19 +128,16 @@ export class Run {
     this.correct += 1;
     this.rolling.push(this.tick);
     obstacle.typed += 1;
-    obstacle.flash = 'correct';
     if (obstacle.typed < obstacle.word.length) {
       this.emit('correct', obstacle);
       return;
     }
 
     obstacle.status = 'queued';
-    obstacle.flash = 'complete';
     this.words += 1;
     if (!obstacle.mistakes) this.combo += 1;
     this.maxCombo = Math.max(this.combo, this.maxCombo);
     obstacle.multiplier = comboMultiplier(this.combo);
-    this.activateNext();
     this.emit('complete', obstacle);
   }
 
@@ -150,12 +149,12 @@ export class Run {
     this.held = this.tutorial && active !== undefined && this.tick >= active.latest;
     if (this.held) return;
 
-    // Process inputs on the current tick before advancing past the last safe
-    // takeoff. The queue is ordered independently from the active word.
-    const next = this.obstacles.find((obstacle) => obstacle.status === 'queued');
+    // Process inputs on the current tick before advancing past the last safe takeoff.
+    const next = this.queued;
     if (this.takeoff === null && next && this.tick >= next.ideal && this.tick <= next.latest) {
       this.takeoff = this.tick;
       next.status = 'jumping';
+      this.activateNext();
       this.emit('jump', next);
     }
 
@@ -207,8 +206,10 @@ export class Run {
   }
 
   private activateNext(): void {
-    const active = this.active;
-    if (active && active.opened === null) active.opened = this.tick;
+    const next = this.obstacles.find((obstacle) => obstacle.status === 'waiting');
+    if (!next) return;
+    next.status = 'open';
+    next.opened = this.tick;
   }
 
   private stockObstacles(): void {
@@ -218,7 +219,6 @@ export class Run {
       if (this.tutorial && this.generated >= TUTORIAL_WORDS.length) break;
       this.generateObstacle();
     }
-    this.activateNext();
   }
 
   private generateObstacle(): void {
@@ -229,8 +229,7 @@ export class Run {
     const word = this.tutorial ? TUTORIAL_WORDS[this.generated] : chooseWord(settings.min, settings.max, this.recent, this.random);
     const reaction = settings.reaction + word.length * 12 / settings.wpm;
     const ideal = previous ? Math.max(earliest, previous.latest + Math.ceil(reaction * HZ)) : earliest;
-    const variants = shapeKeys.filter((shape) => SHAPES[shape].unlock <= stage);
-    const preferred = variants[Math.floor(this.random() * variants.length)];
+    const preferred = this.tutorial ? 'single' : settings.pattern[this.generated % settings.pattern.length];
     const center = distanceAt(ideal + AIR_TICKS / 2, this.tutorial);
     const createGeometry = (shape: Shape) => ({ x: center - SHAPES[shape].width / 2, shape });
     let geometry = createGeometry(preferred);
@@ -243,7 +242,7 @@ export class Run {
 
     this.last = {
       ...geometry, ...window, word, typed: 0, mistakes: 0, opened: null,
-      status: 'open', feedback: -HZ, flash: 'correct', multiplier: 1,
+      status: 'waiting', mistakeTick: -HZ, multiplier: 1,
     };
     this.obstacles.push(this.last);
     this.generated += 1;

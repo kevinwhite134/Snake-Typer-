@@ -1,23 +1,25 @@
-import { AIR_TICKS, COLORS, CUBE_SIZE, GROUND, HEIGHT, HZ, PLAYER_X, SHAPES, WIDTH, distanceAt } from './config.ts';
+import { AIR_TICKS, CUBE_SIZE, GROUND, HEIGHT, HZ, PLAYER_X, SHAPES, STAGES, WIDTH } from './config.ts';
 import type { Obstacle, Run, RunEvent } from './run.ts';
 import type { Settings } from '../storage.ts';
 
 type Spark = { x: number; y: number; vx: number; vy: number; life: number; max: number; size: number; color: string };
 const MINT = '#69ffdd';
 const PINK = '#ff6fbc';
-const MONO = '"Cascadia Mono", "Consolas", "Liberation Mono", monospace';
+const THEMES = [
+  { top: '#081126', sky: '#162d4d', floor: '#13293c', trim: '#477cc7', skyline: [38, 68, 108, 68, 38] },
+  { top: '#070e27', sky: '#183c70', floor: '#112b52', trim: '#4d8ded', skyline: [90, 155, 70, 155, 90] },
+  { top: '#160d32', sky: '#3a215a', floor: '#2a1948', trim: '#9b6de5', skyline: [56, 106, 152, 186, 124] },
+  { top: '#200b27', sky: '#502248', floor: '#3b163f', trim: '#db6ab2', skyline: [160, 115, 60, 115, 160] },
+  { top: '#21101a', sky: '#603022', floor: '#47251f', trim: '#ed935e', skyline: [128, 174, 210, 174, 128] },
+];
 
 const stars = Array.from({ length: 88 }, (_, i) => ({
   x: (i * 173.87) % WIDTH, y: 70 + (i * 51.37) % 426, size: i % 11 === 0 ? 2.5 : 1.15,
   alpha: 0.18 + (i % 7) * 0.07,
 }));
-const towers = Array.from({ length: 25 }, (_, i) => ({
-  x: i * 58, width: 23 + ((i * 31) % 36), height: 30 + ((i * 87) % 128),
-}));
-
 export class Renderer {
   private readonly ctx: CanvasRenderingContext2D;
-  private readonly background: CanvasGradient;
+  private readonly backgrounds: CanvasGradient[];
   private particles: Spark[] = [];
   private shake = 0;
   private impact = 0;
@@ -29,10 +31,12 @@ export class Renderer {
     const context = canvas.getContext('2d');
     if (!context) throw new Error('Canvas is unavailable.');
     this.ctx = context;
-    this.background = context.createLinearGradient(0, 0, 0, HEIGHT);
-    this.background.addColorStop(0, '#0b0a1b');
-    this.background.addColorStop(0.74, '#191039');
-    this.background.addColorStop(1, '#0b0a1a');
+    this.backgrounds = THEMES.map(({ top, sky }) => {
+      const gradient = context.createLinearGradient(0, 0, 0, GROUND);
+      gradient.addColorStop(0, top);
+      gradient.addColorStop(1, sky);
+      return gradient;
+    });
     const resize = new ResizeObserver(() => this.resize());
     resize.observe(canvas);
     this.resize();
@@ -47,16 +51,16 @@ export class Renderer {
   }
 
   effect(event: RunEvent, run: Run, obstacle?: Obstacle): void {
-    const wordX = obstacle ? this.labelX(this.screenX(obstacle, run.distance), obstacle.word) : PLAYER_X;
-    const wordY = obstacle ? GROUND - SHAPES[obstacle.shape].height - 68 : GROUND;
-    if (event === 'correct') this.burst(wordX, wordY, MINT, 4, 70);
-    if (event === 'complete') this.burst(wordX, wordY, MINT, 16, 150);
+    const targetX = obstacle ? this.screenX(obstacle, run.distance) : PLAYER_X;
+    const targetY = obstacle ? GROUND - SHAPES[obstacle.shape].height - 28 : GROUND;
+    const color = STAGES[run.stage].color;
+    if (event === 'complete') this.burst(targetX, targetY, MINT, 16, 150);
     if (event === 'error') {
       this.shake = 0.15;
-      this.burst(wordX, wordY, PINK, 5, 110);
+      this.burst(PLAYER_X, GROUND - run.height - CUBE_SIZE / 2, PINK, 8, 110);
     }
-    if (event === 'land') this.burst(PLAYER_X, GROUND - 3, COLORS[run.stage], 13, 165);
-    if (event === 'jump') this.burst(PLAYER_X, GROUND - 3, COLORS[run.stage], 7, 110);
+    if (event === 'land') this.burst(PLAYER_X, GROUND - 3, color, 13, 165);
+    if (event === 'jump') this.burst(PLAYER_X, GROUND - 3, color, 7, 110);
     if (event === 'death') {
       this.impact = 0.38;
       this.shake = 0.32;
@@ -69,15 +73,15 @@ export class Renderer {
     if (!this.settings.reducedMotion && (moving || dying || !run)) this.time += delta;
     const distance = run ? run.previousDistance + (run.distance - run.previousDistance) * alpha : this.time * 37;
     const stage = run?.stage ?? 0;
-    const color = COLORS[stage];
+    const color = STAGES[stage].color;
     ctx.setTransform(this.canvas.width / WIDTH, 0, 0, this.canvas.height / HEIGHT, 0, 0);
-    this.sky(distance, color);
+    this.sky(distance, stage);
 
     ctx.save();
     if (this.settings.shake && !this.settings.reducedMotion && this.shake > 0) {
       ctx.translate(Math.sin(this.shake * 109) * this.shake * 26, Math.cos(this.shake * 139) * this.shake * 17);
     }
-    this.track(distance, color);
+    this.track(distance, stage);
 
     if (run) {
       const height = run.previousHeight + (run.height - run.previousHeight) * alpha;
@@ -132,14 +136,15 @@ export class Renderer {
     this.canvas.height = Math.max(1, Math.round(box.height * ratio));
   }
 
-  private sky(distance: number, color: string): void {
+  private sky(distance: number, stage: number): void {
     const ctx = this.ctx;
-    ctx.fillStyle = this.background;
+    const { color } = STAGES[stage];
+    const { top, trim, skyline } = THEMES[stage];
+    ctx.fillStyle = this.backgrounds[stage];
     ctx.fillRect(0, 0, WIDTH, HEIGHT);
-    const horizon = ctx.createRadialGradient(850, 530, 15, 850, 530, 605);
-    horizon.addColorStop(0, '#4c256d');
-    horizon.addColorStop(0.46, '#291547');
-    horizon.addColorStop(1, '#19103900');
+    const horizon = ctx.createRadialGradient(900, 536, 12, 900, 536, 680);
+    horizon.addColorStop(0, trim + '68');
+    horizon.addColorStop(1, trim + '00');
     ctx.fillStyle = horizon;
     ctx.fillRect(0, 0, WIDTH, GROUND);
     for (const star of stars) {
@@ -148,56 +153,77 @@ export class Renderer {
       ctx.fillRect(x, star.y, star.size, star.size);
     }
 
-    ctx.strokeStyle = '#9776e922';
+    ctx.strokeStyle = trim + '31';
     ctx.lineWidth = 1;
     ctx.beginPath();
-    for (let x = 0; x < WIDTH; x += 64) { ctx.moveTo(x, 0); ctx.lineTo(x, GROUND); }
+    for (let x = -(distance * 0.14 % 64); x < WIDTH; x += 64) { ctx.moveTo(x, 0); ctx.lineTo(x, GROUND); }
     for (let y = 42; y < GROUND; y += 64) { ctx.moveTo(0, y); ctx.lineTo(WIDTH, y); }
     ctx.stroke();
 
-    for (let i = 0; i < 2; i += 1) {
-      const x = i ? 1053 : 204;
-      const y = i ? 245 : 299;
-      const size = i ? 101 : 74;
+    // Rotating background rings are separate from the bright, grounded hazards.
+    for (let i = 0; i < 3; i += 1) {
+      const span = 1584;
+      const x = (span + (220 + i * 528 - distance * 0.11) % span) % span - 132;
+      const y = 235 + ((i + stage) % 3) * 64;
+      const sides = 4 + 2 * stage;
+      const radius = 44 + (i % 2) * 18;
       ctx.save();
-      ctx.translate(x, y + Math.sin(this.time + i) * 9);
-      ctx.rotate(Math.PI / 4 + this.time * (i ? 0.04 : -0.07));
-      ctx.strokeStyle = i ? '#a379ec43' : color + '2d';
-      ctx.lineWidth = 1.5;
-      ctx.strokeRect(-size / 2, -size / 2, size, size);
-      ctx.strokeStyle = '#9c7bea2f';
-      ctx.strokeRect(-size * 0.68, -size * 0.68, size * 1.36, size * 1.36);
+      ctx.translate(x, y);
+      ctx.rotate(Math.PI / 4 + this.time * (i % 2 ? 0.11 : -0.08));
+      ctx.strokeStyle = color + '3b';
+      ctx.fillStyle = trim + '17';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      for (let point = 0; point < sides; point += 1) {
+        const angle = point * Math.PI * 2 / sides;
+        ctx.lineTo(Math.cos(angle) * radius, Math.sin(angle) * radius);
+      }
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(0, 0, radius * 0.58, 0, Math.PI * 2);
+      ctx.stroke();
       ctx.restore();
     }
 
-    for (const tower of towers) {
-      const span = towers.length * 58;
-      const x = ((tower.x - distance * 0.21) % span + span) % span - 48;
-      const y = GROUND - tower.height;
-      ctx.fillStyle = '#100d258c';
-      ctx.strokeStyle = '#a383e233';
-      ctx.fillRect(x, y, tower.width, tower.height);
-      ctx.strokeRect(x + 0.5, y + 0.5, tower.width, tower.height);
-      ctx.fillStyle = '#a785ff36';
-      for (let light = y + 10; light < GROUND - 9; light += 16) ctx.fillRect(x + 8, light, 4, 2);
+    const stride = 64;
+    const span = stride * skyline.length;
+    for (let start = -(distance * 0.29 % span) - span; start < WIDTH; start += span) {
+      for (const [i, height] of skyline.entries()) {
+        const x = start + i * stride;
+        const y = GROUND - height;
+        ctx.fillStyle = top + 'de';
+        ctx.strokeStyle = trim + '5b';
+        ctx.fillRect(x, y, stride - 5, height);
+        ctx.strokeRect(x + 0.5, y + 0.5, stride - 6, height);
+        ctx.fillStyle = color + '48';
+        ctx.fillRect(x + 5, y + 5, stride - 15, 2);
+        for (let panel = y + 16; panel < GROUND - 20; panel += 26) {
+          ctx.strokeRect(x + 7, panel, stride - 19, 17);
+          ctx.fillRect(x + 12, panel + 5, 10, 2);
+        }
+      }
     }
   }
 
-  private track(distance: number, color: string): void {
+  private track(distance: number, stage: number): void {
     const ctx = this.ctx;
+    const { color } = STAGES[stage];
+    const { floor: tile, top, trim } = THEMES[stage];
     const floor = ctx.createLinearGradient(0, GROUND, 0, HEIGHT);
-    floor.addColorStop(0, '#1c1640');
-    floor.addColorStop(1, '#0b0a1c');
+    floor.addColorStop(0, tile);
+    floor.addColorStop(1, top);
     ctx.fillStyle = floor;
     ctx.fillRect(-12, GROUND, WIDTH + 24, HEIGHT - GROUND + 12);
     ctx.lineWidth = 1;
-    ctx.strokeStyle = '#9f7aff44';
+    ctx.strokeStyle = trim + '65';
     ctx.beginPath();
-    const offset = distance % 80;
-    for (let x = -100 - offset; x < WIDTH + 120; x += 80) {
+    const offset = distance % 96;
+    for (let x = -100 - offset; x < WIDTH + 120; x += 96) {
       ctx.moveTo(x, GROUND); ctx.lineTo(640 + (x - 640) * 1.62, HEIGHT + 14);
     }
-    for (const y of [574, 603, 645, 702]) {
+    for (const y of [597, 639, 697]) {
       ctx.moveTo(-12, y); ctx.lineTo(WIDTH + 12, y);
     }
     ctx.stroke();
@@ -206,8 +232,21 @@ export class Renderer {
     ctx.fillStyle = color;
     ctx.fillRect(-12, GROUND - 1, WIDTH + 24, 2);
     ctx.shadowBlur = 0;
-    ctx.fillStyle = color + '80';
-    for (let x = -offset; x < WIDTH + 12; x += 80) ctx.fillRect(x, GROUND + 3, 15, 2);
+    ctx.strokeStyle = color + '65';
+    ctx.fillStyle = trim + '63';
+    for (let x = -96 - offset; x < WIDTH + 12; x += 96) {
+      ctx.strokeRect(x + 4, GROUND + 7, 88, 25);
+      ctx.fillRect(x + 11, GROUND + 13, 4, 4);
+      ctx.fillRect(x + 81, GROUND + 22, 4, 4);
+      ctx.beginPath();
+      ctx.moveTo(x + 39, GROUND + 13);
+      ctx.lineTo(x + 48, GROUND + 20);
+      ctx.lineTo(x + 39, GROUND + 27);
+      ctx.moveTo(x + 49, GROUND + 13);
+      ctx.lineTo(x + 58, GROUND + 20);
+      ctx.lineTo(x + 49, GROUND + 27);
+      ctx.stroke();
+    }
   }
 
   private cube(x: number, height: number, angle: number, color: string, opacity: number, squash = 0): void {
@@ -239,109 +278,73 @@ export class Renderer {
     return PLAYER_X + obstacle.x + SHAPES[obstacle.shape].width / 2 - distance;
   }
 
-  private labelX(x: number, word: string): number {
-    return Math.min(x, WIDTH - word.length * 10 - 32);
-  }
-
   private obstacles(run: Run, distance: number): void {
-    const active = run.active;
     const ctx = this.ctx;
-    ctx.font = `700 29px ${MONO}`;
-    const activeX = active ? this.labelX(this.screenX(active, distance), active.word) : -1000;
-    let lastRight = -1000;
     for (const obstacle of run.obstacles) {
       const { width, height } = SHAPES[obstacle.shape];
       const x = this.screenX(obstacle, distance);
       const left = x - width / 2;
-      const visible = left < WIDTH + 12 && x + width / 2 > -12;
+      if (left > WIDTH + 12 || x + width / 2 < -12) continue;
       const armed = obstacle.status === 'queued' || obstacle.status === 'jumping' || obstacle.status === 'cleared';
-      if (visible) this.shape(left, obstacle.shape, armed ? MINT : PINK, obstacle.status === 'cleared' ? 0.50 : 1);
+      const waiting = obstacle.status === 'waiting';
+      this.shape(left, obstacle.shape, armed ? MINT : PINK, waiting || obstacle.status === 'cleared' ? 0.58 : 1);
 
-      const half = ctx.measureText(obstacle.word).width / 2 + 16;
-      const label = obstacle === active ? activeX : x;
-      if (obstacle !== active) {
-        if (!visible || label + half > WIDTH - 12 || label - half < 24 || label - half < lastRight + 12) continue;
-        if (obstacle.status === 'cleared' || obstacle.status === 'failed') continue;
-        if (active && Math.abs(label - activeX) < half + active.word.length * 9 + 26) continue;
+      const y = GROUND - height - 27;
+      ctx.strokeStyle = MINT;
+      ctx.lineWidth = 2.5;
+      if (obstacle.status === 'open') {
+        ctx.beginPath();
+        ctx.moveTo(x - 8, y - 4);
+        ctx.lineTo(x, y + 4);
+        ctx.lineTo(x + 8, y - 4);
+        ctx.stroke();
+      } else if (obstacle.status === 'queued') {
+        ctx.beginPath();
+        ctx.moveTo(x - 7, y);
+        ctx.lineTo(x - 2, y + 5);
+        ctx.lineTo(x + 8, y - 5);
+        ctx.stroke();
       }
-      this.word(obstacle, label, GROUND - height - 65, x, run, obstacle === active);
-      lastRight = label + half;
     }
   }
 
   private shape(x: number, shape: Obstacle['shape'], color: string, opacity: number): void {
     const ctx = this.ctx;
-    const { width, height, spikes } = SHAPES[shape];
     ctx.save();
     ctx.globalAlpha = opacity;
-    const gradient = ctx.createLinearGradient(0, GROUND - height, 0, GROUND);
-    gradient.addColorStop(0, color + 'a8');
-    gradient.addColorStop(1, color + '29');
-    ctx.fillStyle = gradient;
-    ctx.strokeStyle = color;
-    ctx.shadowColor = color;
-    ctx.shadowBlur = 16;
-    ctx.lineWidth = 2;
-    if (spikes) {
-      const span = width / spikes;
-      for (let i = 0; i < spikes; i += 1) {
-        const left = x + i * span;
-        ctx.beginPath();
-        ctx.moveTo(left, GROUND - 1);
-        ctx.lineTo(left + span / 2, GROUND - height);
-        ctx.lineTo(left + span, GROUND - 1);
-        ctx.closePath();
-        ctx.fill();
-        ctx.stroke();
+    for (const part of SHAPES[shape].parts) {
+      const { width, height, spikes } = part;
+      const left = x + part.x;
+      const top = GROUND - height;
+      const gradient = ctx.createLinearGradient(0, top, 0, GROUND);
+      gradient.addColorStop(0, color + 'bd');
+      gradient.addColorStop(1, '#0b1020');
+      ctx.fillStyle = gradient;
+      ctx.strokeStyle = color;
+      ctx.shadowColor = color;
+      ctx.shadowBlur = 12;
+      ctx.lineWidth = 2;
+      if (spikes) {
+        const span = width / spikes;
+        for (let i = 0; i < spikes; i += 1) {
+          const start = left + i * span;
+          ctx.beginPath();
+          ctx.moveTo(start, GROUND - 1);
+          ctx.lineTo(start + span / 2, top);
+          ctx.lineTo(start + span, GROUND - 1);
+          ctx.closePath();
+          ctx.fill();
+          ctx.stroke();
+        }
+      } else {
+        ctx.fillRect(left, top, width, height);
+        ctx.strokeRect(left, top, width, height);
+        ctx.shadowBlur = 0;
+        ctx.strokeStyle = color + 'a8';
+        ctx.strokeRect(left + 6, top + 7, width - 12, height - 14);
+        ctx.fillStyle = color;
+        ctx.fillRect(left + 7, top + 8, width - 14, 3);
       }
-    } else {
-      ctx.fillRect(x, GROUND - height, width, height);
-      ctx.strokeRect(x, GROUND - height, width, height);
-      ctx.strokeStyle = color + '7a';
-      ctx.strokeRect(x + 9, GROUND - height + 9, width - 18, height - 18);
-    }
-    ctx.restore();
-  }
-
-  private word(obstacle: Obstacle, x: number, y: number, target: number, run: Run, active: boolean): void {
-    const ctx = this.ctx;
-    ctx.save();
-    ctx.font = `700 ${active ? 29 : 24}px ${MONO}`;
-    ctx.textBaseline = 'middle';
-    const width = ctx.measureText(obstacle.word).width;
-    const left = x - width / 2 - 13;
-    const armed = obstacle.status !== 'open';
-    const recent = run.tick - obstacle.feedback < 0.19 * HZ;
-    const error = recent && obstacle.flash === 'error';
-    const fraction = active ? Math.max(0, Math.min(1,
-      (distanceAt(obstacle.latest, run.tutorial) - run.distance) /
-      Math.max(1, distanceAt(obstacle.latest, run.tutorial) - distanceAt(obstacle.opened ?? 0, run.tutorial)),
-    )) : 0;
-    const accent = error || (active && fraction < 0.20) ? '#ff82a8' : MINT;
-    ctx.fillStyle = active ? '#0a0b1af5' : '#100e23d4';
-    ctx.strokeStyle = active ? accent + 'a8' : armed ? '#62ffce75' : '#af9aea58';
-    ctx.lineWidth = active ? 1.8 : 1;
-    ctx.beginPath();
-    ctx.roundRect(left, y - 24, width + 26, 48, 8);
-    ctx.fill();
-    ctx.stroke();
-
-    let offset = left + 13;
-    for (const [index, letter] of [...obstacle.word].entries()) {
-      ctx.fillStyle = index < obstacle.typed ? MINT : error && index === obstacle.typed ? '#ff82a8' : active ? '#f9f6ff' : '#bbb1d4';
-      if (recent && index < obstacle.typed) { ctx.shadowColor = MINT; ctx.shadowBlur = 13; }
-      ctx.fillText(letter, offset, y + 1);
-      ctx.shadowBlur = 0;
-      offset += ctx.measureText(letter).width;
-    }
-    if (active) {
-      ctx.fillStyle = '#9a8bbb42';
-      ctx.fillRect(left + 2, y + 28, width + 22, 4);
-      ctx.fillStyle = accent;
-      ctx.fillRect(left + 2, y + 28, (width + 22) * fraction, 4);
-      ctx.font = `700 12px ${MONO}`;
-      ctx.textAlign = 'center';
-      ctx.fillText(run.held ? 'TYPE TO CONTINUE' : fraction === 0 ? 'DEADLINE MISSED' : target > WIDTH ? '› INCOMING' : 'TYPE THIS', x, y - 37);
     }
     ctx.restore();
   }

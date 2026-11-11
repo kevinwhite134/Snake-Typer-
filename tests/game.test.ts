@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  AIR_TICKS, HZ, LANDING_BUFFER, PLAYER_X, SHAPES, STEP, TUTORIAL_WORDS, WIDTH, distanceAt,
+  AIR_TICKS, DISTANCE_PER_POINT, HZ, LANDING_BUFFER, MISTAKE_POINTS, PLAYER_X, SHAPES, STEP, TUTORIAL_WORDS, WIDTH, distanceAt,
 } from '../src/game/config.ts';
 import { canJump, hitsObstacle, jumpHeight, planJump } from '../src/game/physics.ts';
 import { FixedClock, Run, comboMultiplier } from '../src/game/run.ts';
@@ -20,23 +20,25 @@ function complete(run: Run) {
   for (const letter of word) run.type(letter);
 }
 
-test('correct input advances; errors affect accuracy without losing progress', () => {
+test('mistakes roll back one letter, reduce accuracy, and deduct points', () => {
   const run = new Run(true);
   const obstacle = run.active!;
   run.type('t');
-  run.type('z');
   assert.equal(obstacle.typed, 1);
+  run.type('z');
+  assert.equal(obstacle.typed, 0);
   assert.equal(run.correct, 1);
   assert.equal(run.incorrect, 1);
   assert.equal(run.accuracy, 50);
-  run.type('a');
-  run.type('p');
+  run.type('z');
+  assert.equal(obstacle.typed, 0);
+  assert.equal(run.score, 0);
+  complete(run);
   assert.equal(obstacle.status, 'queued');
   assert.equal(run.words, 1);
   assert.equal(run.combo, 0);
-  assert.equal(run.active!.word, 'jump');
-  run.type('t');
-  assert.equal(run.words, 1);
+  stepTo(run, obstacle.ideal + AIR_TICKS);
+  assert.equal(run.score, run.points + Math.floor(run.distance / DISTANCE_PER_POINT) - 2 * MISTAKE_POINTS);
 });
 
 test('words cannot be changed once the run ends', () => {
@@ -65,6 +67,9 @@ test('swept collision catches a spike crossed in one step and respects its slope
   assert.equal(hitsObstacle(spike, 82, 83, 12), false);
   assert.equal(hitsObstacle(spike, 113, 124, 48), false);
   assert.equal(hitsObstacle({ x: 100, shape: 'block' }, 0, 300, 89), true);
+  const fortress = { x: 100, shape: 'fortress' } as const;
+  assert.equal(hitsObstacle(fortress, 120, 120, 60), false);
+  assert.equal(hitsObstacle(fortress, 165, 165, 60), true);
 });
 
 test('early completion queues the jump until its ideal takeoff', () => {
@@ -109,7 +114,7 @@ test('a missed deadline and unsafe planner candidates are rejected', () => {
   assert.equal(planJump({ x: 10, shape: 'block' }, obstacle.ideal), null);
 });
 
-test('multiple queued jumps fire in order, with a landing between them', () => {
+test('only one jump can be queued, and the next word opens at takeoff', () => {
   const events: string[] = [];
   const run = new Run(false, (event, obstacle) => {
     if (event === 'jump') events.push(obstacle!.word);
@@ -117,6 +122,17 @@ test('multiple queued jumps fire in order, with a landing between them', () => {
   });
   const [first, second] = run.obstacles;
   complete(run);
+  assert.equal(run.queued, first);
+  assert.equal(run.active, undefined);
+  for (const letter of second.word) run.type(letter);
+  assert.equal(run.words, 1);
+  assert.equal(run.incorrect, 0);
+  assert.equal(second.typed, 0);
+  stepTo(run, first.ideal + 1);
+  assert.equal(run.queued, undefined);
+  assert.equal(run.active, second);
+  assert.equal(second.opened, first.ideal);
+  assert.ok(run.height > 0);
   complete(run);
   stepTo(run, second.ideal + AIR_TICKS);
   assert.deepEqual(events, [first.word, 'land', second.word, 'land']);
@@ -146,8 +162,11 @@ test('the practice course waits indefinitely and clears all three jumps', () => 
   assert.equal(run.held, true);
   assert.equal(run.dead, false);
   for (const word of TUTORIAL_WORDS) {
-    assert.equal(run.active!.word, word);
+    const obstacle = run.active!;
+    assert.equal(obstacle.word, word);
+    stepTo(run, obstacle.latest);
     complete(run);
+    run.step();
   }
   stepTo(run, 30 * HZ);
   assert.equal(run.finished, true);

@@ -1,6 +1,6 @@
 # Type Dash
 
-**Type fast. Jump faster.** Type Dash is an endless, neon typing arcade game in the Snake Typer repository. Type the highlighted word before its timing bar empties. The cube automatically jumps when it reaches the obstacle.
+**Type fast. Jump faster.** Type Dash is an endless, neon typing arcade game in the Snake Typer repository. Follow the boxed letter and finish the word before its timer empties. The cube jumps automatically and opens the next word at takeoff. Five courses ramp up the speed, word length, and obstacle formations.
 
 ## Run locally
 
@@ -15,7 +15,7 @@ Open the local URL printed by Vite. A physical keyboard is recommended.
 
 | Control | Action |
 | --- | --- |
-| A–Z | Type the highlighted word. Mistakes count against accuracy and leave your typing progress in place. |
+| A–Z | Type the highlighted word. A typo sends you back one letter, costs 25 points, and breaks your combo. |
 | Escape | Pause or resume. Switching tabs also pauses a run. |
 | Enter | Start from the main menu or retry from the results screen. |
 

@@ -75,6 +75,7 @@ class Arcade {
     this.overlay.hidden = this.overlay.innerHTML === '';
     this.audio.setPlaying(running);
     if (this.run && live) updateHud(this.run);
+    if (!running) element('typing-card').hidden = true;
     if (!live || state === 'DYING') this.clearToast();
 
     if (this.overlay.hidden) {
@@ -149,9 +150,12 @@ class Arcade {
     switch (event) {
       case 'correct':
       case 'error':
-      case 'jump':
       case 'land':
         this.audio.cue(event);
+        break;
+      case 'jump':
+        this.audio.cue('jump');
+        updateHud(run);
         break;
       case 'complete':
         this.audio.cue('complete');
@@ -159,7 +163,8 @@ class Arcade {
         break;
       case 'stage':
         this.audio.cue('stage');
-        this.announce(`${STAGES[run.stage].name.toUpperCase()} MODE`);
+        const { course, name } = STAGES[run.stage];
+        this.announce(`${course.toUpperCase()} · ${name.toUpperCase()}`);
         break;
       case 'clear':
         if (!run.tutorial && this.previousBest > 0 && !this.celebratedBest && run.score > this.previousBest) {
